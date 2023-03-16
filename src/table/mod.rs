@@ -53,8 +53,8 @@ impl<F: PrimeField> BitDecompositionTableConfig<F> {
     pub(super) fn map_character_to_encoded_value(&self, character: char) -> u8 {
         match character {
             '=' => 0,
-            'a'..='z' => character as u8 - 71,
             'A'..='Z' => character as u8 - 65,
+            'a'..='z' => character as u8 - 71,
             '0'..='9' => character as u8 + 4,
             '+' => 62,
             '/' => 63,
