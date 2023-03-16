@@ -225,7 +225,7 @@ impl<F: PrimeField> Circuit<F> for Base64Circuit<F> {
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        print!("Assigning table in synthesize...");
+        println!("Assigning table in synthesize...");
         match config.bit_decomposition_table.load(&mut layouter) {
             Ok(_) => (),
             Err(e) => {
@@ -233,12 +233,11 @@ impl<F: PrimeField> Circuit<F> for Base64Circuit<F> {
                 return Err(e);
             }
         };
-        print!("Assigning values and copy constraints in synthesize...");
         let mut value = config.assign_values(
             layouter.namespace(|| "Assign all values"),
             self.base64_encoded_string.clone(),
         );
-        print!("Done assigning values in synthesize...");
+        println!("Done assigning values in synthesize");
         Ok(())
     }
 }

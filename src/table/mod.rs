@@ -64,7 +64,7 @@ impl<F: PrimeField> BitDecompositionTableConfig<F> {
 
     pub(super) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_table(
-            || "load BitDecomposition table",
+            || "load 64 bit table",
             |mut table| {
                 // Assign ASCII characters and corresponding value_encoded values
                 // let offset = 0;
@@ -85,6 +85,12 @@ impl<F: PrimeField> BitDecompositionTableConfig<F> {
                         || Value::known(F::from_u128(character as u128)),
                     )?;
                 }
+                Ok(())
+            },
+        )?;
+        layouter.assign_table(
+            || "load 256 bit table",
+            |mut table| {
                 // Assign bit decompositions for each value_encoded and value_decoded value
                 for i in 0..256 {
                     // print!("Row: {:?} {:?}", row, offset);
