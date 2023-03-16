@@ -139,23 +139,44 @@ impl<F: PrimeField> Base64Config<F> {
         layouter.assign_region(
             || "Assign values",
             |mut region| {
-                // TODO: Set the bits
+                // Set the decoded values and enable permutation checks with offset
+                let decoded_chars: Vec<u8> = base64::decode(characters.clone()).unwrap();
+                for i in 0..decoded_chars.len() {
+                    let offset_value = region.assign_advice(
+                        || format!("decoded character"),
+                        self.decoded_chars_without_gap,
+                        i,
+                        || Value::known(F::from_u128(decoded_chars[i].into())),
+                    )?;
+                    offset_value.copy_advice(
+                        || "copying to add offset",
+                        &mut region,
+                        self.decoded_chars,
+                        i + (i / 3),
+                    )?;
+                }
 
-                // Set the encoded/decoded values
-                for i in (0..SHAHASH_BASE64_STRING_LEN) {
-                    println!(
-                        "{:?}, {:?}",
-                        characters[i],
-                        self.bit_decomposition_table
-                            .map_encoded_value_to_character(characters[i])
-                    );
-
+                // Set the character values as encoded chars
+                for i in 0..SHAHASH_BASE64_STRING_LEN {
+                    let bit_val: u8 = self
+                        .bit_decomposition_table
+                        .map_character_to_encoded_value(characters[i] as char);
                     region.assign_advice(
-                        || format!("character"),
+                        || format!("encoded character"),
                         self.encoded_chars,
                         i,
                         || Value::known(F::from_u128(characters[i].into())),
                     )?;
+
+                    // Set bit values
+                    for j in 0..3 {
+                        region.assign_advice(
+                            || format!("bit assignment"),
+                            self.bit_decompositions[(i % 4) * 3 + j],
+                            i,
+                            || Value::known(F::from_u128(((bit_val >> j) & 1 == 1) as u128)),
+                        )?;
+                    }
                 }
 
                 // Enable q_decomposed on every 4 rows
@@ -230,7 +251,8 @@ mod tests {
         let k = 10; // 8, 128, etc
 
         // Convert query string to u128s
-        let characters: Vec<u8> = "GIu+hBcWsHGJVbzDqPH7VmmZIfFz1v6pHMZxqV3dOQc="
+        // "R0g=""
+        let characters: Vec<u8> = "GIu+hBcWsHGJVbzDqPH7VmmZIfFz1v6pHMZxqV3dR0g="
             .chars()
             .map(|c| c as u32 as u8)
             .collect();
@@ -238,9 +260,16 @@ mod tests {
         // Make a vector of the numbers 1...24
         assert_eq!(characters.len(), SHAHASH_BASE64_STRING_LEN);
         #[allow(deprecated)]
+        let chars: Vec<char> = base64::decode(characters.clone())
+            .unwrap()
+            .iter()
+            .map(|&b| b as char)
+            .collect();
+
         print!(
-            "decoded characters: {:?}",
-            base64::decode(characters.clone())
+            "decoded characters: {:?} {:?}",
+            base64::decode(characters.clone()),
+            chars
         );
 
         // Successful cases
