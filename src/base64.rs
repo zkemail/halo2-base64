@@ -274,12 +274,6 @@ mod tests {
             .map(|&b| b as char)
             .collect();
 
-        print!(
-            "decoded characters: {:?} {:?}",
-            base64::decode(characters.clone()),
-            chars
-        );
-
         // Successful cases
         let circuit = Base64Circuit::<Fp> {
             base64_encoded_string: characters,
