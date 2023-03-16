@@ -118,14 +118,14 @@ impl<F: PrimeField> Base64Config<F> {
         // Create bit lookup for each bit
         for i in 0..ENCODED_LOOKUP_COLS.len() {
             assert_eq!(ENCODED_LOOKUP_COLS[i], i);
-            config.create_bit_lookup(
-                meta,
-                i,
-                true,
-                ENCODED_BIT_LOOKUP_COLS[i].to_vec(),
-                [0, 1, 2].to_vec(),
-                q_decode_selector,
-            );
+            // config.create_bit_lookup(
+            //     meta,
+            //     i,
+            //     true,
+            //     ENCODED_BIT_LOOKUP_COLS[i].to_vec(),
+            //     [0, 1, 2].to_vec(),
+            //     q_decode_selector,
+            // );
         }
         config
     }
@@ -148,12 +148,18 @@ impl<F: PrimeField> Base64Config<F> {
                         i,
                         || Value::known(F::from_u128(decoded_chars[i].into())),
                     )?;
-                    offset_value.copy_advice(
-                        || "copying to add offset",
-                        &mut region,
+                    let offset_value = region.assign_advice(
+                        || format!("decoded character"),
                         self.decoded_chars,
                         i + (i / 3),
+                        || Value::known(F::from_u128(decoded_chars[i].into())),
                     )?;
+                    // offset_value.copy_advice(
+                    //     || "copying to add offset",
+                    //     &mut region,
+                    //     self.decoded_chars,
+                    //     i + (i / 3),
+                    // )?;
                 }
 
                 // Set the character values as encoded chars
@@ -219,17 +225,20 @@ impl<F: PrimeField> Circuit<F> for Base64Circuit<F> {
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        config.bit_decomposition_table.load(&mut layouter)?;
-        print!("TODO: Enabling equality in synthesize...");
-        // for i in 0..SHAHASH_BASE64_STRING_LEN {
-        //     config.decoded_chars.copy_advice(|| "decoded char shifting down", region, config.decoded_chars_without_gap, row)?;
-        // }
-
-        print!("Assigning values in synthesize...");
+        print!("Assigning table in synthesize...");
+        match config.bit_decomposition_table.load(&mut layouter) {
+            Ok(_) => (),
+            Err(e) => {
+                println!("Error loading bit decomposition table: {:?}", e);
+                return Err(e);
+            }
+        };
+        print!("Assigning values and copy constraints in synthesize...");
         let mut value = config.assign_values(
             layouter.namespace(|| "Assign all values"),
             self.base64_encoded_string.clone(),
         );
+        print!("Done assigning values in synthesize...");
         Ok(())
     }
 }
@@ -278,7 +287,10 @@ mod tests {
             _marker: PhantomData,
         };
 
-        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+        let prover = match MockProver::run(k, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("Error: {:?}", e),
+        };
         prover.assert_satisfied();
         CircuitCost::<Eq, Base64Circuit<Fp>>::measure((k as u128).try_into().unwrap(), &circuit)
             .proof_size(2);

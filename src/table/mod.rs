@@ -107,6 +107,7 @@ impl<F: PrimeField> BitDecompositionTableConfig<F> {
                         || Value::known(F::from_u128(i as u128)),
                     )?;
                 }
+                print!("Done assigning table");
                 Ok(())
             },
         )
