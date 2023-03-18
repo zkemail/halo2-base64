@@ -43,17 +43,14 @@ impl<F: PrimeField> Base64Config<F> {
         meta.lookup(|meta| {
             assert!(bit_query_cols.len() == bit_lookup_cols.len());
             let q = meta.query_selector(selector_col);
-            // let bit_query_values = vec![];
-            // for i in 0..bit_query_cols.len() {
-            //     bit_query_values.push(meta.query_advice(bit_decompositions[bit_cols[i]], Rotation::cur()));
-            // }
-            // One minus q
 
+            // One minus q defaults to the 'a' value and '0' bit values
             let one_minus_q = Expression::Constant(F::from(1)) - q.clone();
             let zero = Expression::Constant(F::from(0));
             let zero_char = Expression::Constant(F::from(65));
+
             let mut lookup_vec = vec![];
-            if (encoded_if_true_and_decoded_if_false) {
+            if encoded_if_true_and_decoded_if_false {
                 let encoded_char = meta.query_advice(
                     self.encoded_chars,
                     Rotation(encoded_or_decoded_index_offset as i32),
@@ -75,6 +72,7 @@ impl<F: PrimeField> Base64Config<F> {
             for i in 0..bit_query_cols.len() {
                 let bit =
                     meta.query_advice(self.bit_decompositions[bit_query_cols[i]], Rotation::cur());
+                println!("bit: {:?}", bit);
                 lookup_vec.push((
                     q.clone() * bit + one_minus_q.clone() * zero.clone(),
                     self.bit_decomposition_table.bit_decompositions[bit_lookup_cols[i]],
@@ -91,7 +89,7 @@ impl<F: PrimeField> Base64Config<F> {
             bit_decompositions.push(meta.advice_column());
         }
         let decoded_chars = meta.advice_column();
-        let characters = meta.advice_column();
+        // let characters = meta.advice_column();
         let decoded_chars_without_gap = meta.advice_column();
         let bit_decomposition_table = BitDecompositionTableConfig::configure(meta);
         let q_decode_selector = meta.complex_selector();
@@ -117,7 +115,7 @@ impl<F: PrimeField> Base64Config<F> {
             _marker: PhantomData,
         };
         // Create bit lookup for each 6-bit encoded value
-        // TODO: Make loop bound ENCODED_LOOKUP_COLS.len()
+        // TODO: Edit last one to say ENCODED_LOOKUP_COLS.len()
         for i in 0..ENCODED_LOOKUP_COLS.len() {
             assert_eq!(ENCODED_LOOKUP_COLS[i], i);
             config.create_bit_lookup(
@@ -126,21 +124,22 @@ impl<F: PrimeField> Base64Config<F> {
                 true,
                 ENCODED_BIT_LOOKUP_COLS[i].to_vec(),
                 [0, 1, 2].to_vec(),
-                q_decode_selector,
+                config.q_decode_selector,
             );
         }
         // Create bit lookup for each 8-bit decoded value
-        for i in 0..DECODED_LOOKUP_COLS.len() {
-            assert_eq!(DECODED_LOOKUP_COLS[i], i);
-            config.create_bit_lookup(
-                meta,
-                i + (i / 3),
-                false,
-                DECODED_BIT_LOOKUP_COLS[i].to_vec(),
-                [0, 1, 2, 3].to_vec(),
-                q_decode_selector,
-            );
-        }
+        // TODO: Enable loop bound and set to DECODED_LOOKUP_COLS.len()
+        // for i in 2..3 {
+        //     // assert_eq!(DECODED_LOOKUP_COLS[i], i);
+        //     config.create_bit_lookup(
+        //         meta,
+        //         i,
+        //         false,
+        //         DECODED_BIT_LOOKUP_COLS[i].to_vec(),
+        //         [0, 1, 2, 3].to_vec(),
+        //         config.q_decode_selector,
+        //     );
+        // }
         config
     }
 
@@ -162,12 +161,6 @@ impl<F: PrimeField> Base64Config<F> {
                         i,
                         || Value::known(F::from_u128(decoded_chars[i].into())),
                     )?;
-                    // let offset_value = region.assign_advice(
-                    //     || format!("decoded character"),
-                    //     self.decoded_chars,
-                    //     i + (i / 3),
-                    //     || Value::known(F::from_u128(decoded_chars[i].into())),
-                    // )?;
                     offset_value.copy_advice(
                         || "copying to add offset",
                         &mut region,
@@ -193,15 +186,16 @@ impl<F: PrimeField> Base64Config<F> {
                         region.assign_advice(
                             || format!("bit assignment"),
                             self.bit_decompositions[(i % 4) * 3 + j],
-                            i,
-                            || Value::known(F::from_u128(((bit_val >> j) & 1 == 1) as u128)),
+                            i - (i % 4),
+                            || Value::known(F::from_u128(((bit_val >> (j * 2)) % 4) as u128)),
                         )?;
                     }
                 }
 
                 // Enable q_decomposed on every 4 rows
+                // TODO change bound to ..SHAHASH_BASE64_STRING_LEN
                 for i in (0..SHAHASH_BASE64_STRING_LEN).step_by(4) {
-                    // self.q_decode_selector.enable(&mut region, i)?;
+                    self.q_decode_selector.enable(&mut region, i)?;
                 }
                 Ok(true)
             },
@@ -287,7 +281,7 @@ mod tests {
             .iter()
             .map(|&b| b as char)
             .collect();
-
+        print!("Decoded chars: {:?}", chars);
         // Successful cases
         let circuit = Base64Circuit::<Fp> {
             base64_encoded_string: characters,
@@ -299,9 +293,8 @@ mod tests {
             Err(e) => panic!("Error: {:?}", e),
         };
         prover.assert_satisfied();
-        CircuitCost::<Eq, Base64Circuit<Fp>>::measure((k as u128).try_into().unwrap(), &circuit)
-            .proof_size(2);
-        // println!("{}", CircuitCost::measure(k, &circuit));
+        CircuitCost::<Eq, Base64Circuit<Fp>>::measure((k as u128).try_into().unwrap(), &circuit);
+        // .proof_size(2);
 
         // Assert the 33rd pos is 0
     }

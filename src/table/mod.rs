@@ -63,34 +63,69 @@ impl<F: PrimeField> BitDecompositionTableConfig<F> {
     }
 
     pub(super) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        const OFFSET: usize = 1; // How many special characters we add into rows at the top (just = as 0)
+
         layouter.assign_table(
             || "load 64 bit table",
             |mut table| {
                 // Assign ASCII characters and corresponding value_encoded values
-                // let offset = 0;
+                // Special case = to be 0
+                table.assign_cell(
+                    || "value_encoded",
+                    self.value_encoded,
+                    0,
+                    || Value::known(F::from_u128(0 as u128)),
+                )?;
+                // Assign each character value that corresponds to its base64 encoded value
+                const equal: char = '=';
+                table.assign_cell(
+                    || "character",
+                    self.character,
+                    0,
+                    || Value::known(F::from_u128(equal as u128)),
+                )?;
+
                 for value_encoded in 0..64 {
                     // print!("Row: {:?} {:?}", row, offset);
                     table.assign_cell(
                         || "value_encoded",
                         self.value_encoded,
-                        value_encoded,
+                        value_encoded + OFFSET,
                         || Value::known(F::from_u128(value_encoded as u128)),
                     )?;
                     // Assign each character value that corresponds to its base64 encoded value
-                    let character = self.map_encoded_value_to_character(value_encoded as u8);
+                    let character_var = self.map_encoded_value_to_character(value_encoded as u8);
                     table.assign_cell(
                         || "character",
                         self.character,
-                        value_encoded,
-                        || Value::known(F::from_u128(character as u128)),
+                        value_encoded + OFFSET,
+                        || Value::known(F::from_u128(character_var as u128)),
                     )?;
                 }
+
                 Ok(())
             },
         )?;
         layouter.assign_table(
             || "load 256 bit table",
             |mut table| {
+                // Special case = to be 0 at the top row
+                for col in 0..BIT_COLUMN_COUNT {
+                    table.assign_cell(
+                        || "bit decompositions",
+                        self.bit_decompositions[col as usize],
+                        0,
+                        || Value::known(F::from_u128(((0 >> (col * 2)) % 4) as u128)),
+                    )?;
+                }
+
+                table.assign_cell(
+                    || "value_decoded",
+                    self.value_decoded,
+                    0,
+                    || Value::known(F::from_u128(0 as u128)),
+                )?;
+
                 // Assign bit decompositions for each value_encoded and value_decoded value
                 for i in 0..256 {
                     // print!("Row: {:?} {:?}", row, offset);
@@ -98,18 +133,21 @@ impl<F: PrimeField> BitDecompositionTableConfig<F> {
                         table.assign_cell(
                             || "bit decompositions",
                             self.bit_decompositions[col as usize],
-                            i,
+                            i + OFFSET,
                             || Value::known(F::from_u128(((i >> (col * 2)) % 4) as u128)),
                         )?;
+                        println!(
+                            "Assigned bit decompositions for {:?}: col {:?} - {:?}",
+                            i,
+                            col,
+                            ((i >> (col * 2)) % 4) as u128
+                        );
                     }
-                }
-                // Assign each value_decoded value
-                for i in 0..256 {
-                    // print!("Row: {:?} {:?}", row, offset);
+                    // Assign each value_decoded value
                     table.assign_cell(
                         || "value_decoded",
                         self.value_decoded,
-                        i,
+                        i + OFFSET,
                         || Value::known(F::from_u128(i as u128)),
                     )?;
                 }
