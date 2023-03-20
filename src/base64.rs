@@ -64,6 +64,7 @@ impl<F: PrimeField> Base64Config<F> {
                     self.decoded_chars,
                     Rotation(encoded_or_decoded_index_offset as i32),
                 );
+                println!("decoded_char: {:?}", decoded_char);
                 lookup_vec.push((
                     q.clone() * decoded_char + one_minus_q.clone() * zero.clone(),
                     self.bit_decomposition_table.value_decoded,
@@ -115,31 +116,27 @@ impl<F: PrimeField> Base64Config<F> {
             _marker: PhantomData,
         };
         // Create bit lookup for each 6-bit encoded value
-        // TODO: Edit last one to say ENCODED_LOOKUP_COLS.len()
         for i in 0..ENCODED_LOOKUP_COLS.len() {
-            assert_eq!(ENCODED_LOOKUP_COLS[i], i);
             config.create_bit_lookup(
                 meta,
                 i,
                 true,
                 ENCODED_BIT_LOOKUP_COLS[i].to_vec(),
-                [0, 1, 2].to_vec(),
+                [2, 1, 0].to_vec(),
                 config.q_decode_selector,
             );
         }
         // Create bit lookup for each 8-bit decoded value
-        // TODO: Enable loop bound and set to DECODED_LOOKUP_COLS.len()
-        // for i in 2..3 {
-        //     // assert_eq!(DECODED_LOOKUP_COLS[i], i);
-        //     config.create_bit_lookup(
-        //         meta,
-        //         i,
-        //         false,
-        //         DECODED_BIT_LOOKUP_COLS[i].to_vec(),
-        //         [0, 1, 2, 3].to_vec(),
-        //         config.q_decode_selector,
-        //     );
-        // }
+        for i in 0..DECODED_LOOKUP_COLS.len() {
+            config.create_bit_lookup(
+                meta,
+                i,
+                false,
+                DECODED_BIT_LOOKUP_COLS[i].to_vec(),
+                [3, 2, 1, 0].to_vec(),
+                config.q_decode_selector,
+            );
+        }
         config
     }
 
@@ -181,19 +178,18 @@ impl<F: PrimeField> Base64Config<F> {
                         || Value::known(F::from_u128(characters[i].into())),
                     )?;
 
-                    // Set bit values
+                    // Set bit values by decomposing the encoded character
                     for j in 0..3 {
                         region.assign_advice(
                             || format!("bit assignment"),
                             self.bit_decompositions[(i % 4) * 3 + j],
                             i - (i % 4),
-                            || Value::known(F::from_u128(((bit_val >> (j * 2)) % 4) as u128)),
+                            || Value::known(F::from_u128(((bit_val >> ((2 - j) * 2)) % 4) as u128)),
                         )?;
                     }
                 }
 
                 // Enable q_decomposed on every 4 rows
-                // TODO change bound to ..SHAHASH_BASE64_STRING_LEN
                 for i in (0..SHAHASH_BASE64_STRING_LEN).step_by(4) {
                     self.q_decode_selector.enable(&mut region, i)?;
                 }
@@ -264,7 +260,7 @@ mod tests {
     // TODO: set an offset in the email for the bh= and see what happens
     #[test]
     fn test_base64_decode_pass() {
-        let k = 10; // 8, 128, etc
+        let k = 9; // 8, 128, etc
 
         // Convert query string to u128s
         // "R0g=""
