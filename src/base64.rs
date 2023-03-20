@@ -21,10 +21,15 @@ use crate::table::BitDecompositionTableConfig;
 const SHAHASH_BASE64_STRING_LEN: usize = 44;
 const BIT_DECOMPOSITION_ADVICE_COL_COUNT: usize = 12;
 
-// Here we decompose a transition into 3-value lookups.
-
 #[derive(Debug, Clone)]
-struct Base64Config<F: PrimeField> {
+pub struct AssignedBase64Result<F: PrimeField> {
+    pub encoded: Vec<AssignedCell<F, F>>,
+    pub decoded: Vec<AssignedCell<F, F>>,
+}
+
+// Here we decompose a transition into 3-value lookups.
+#[derive(Debug, Clone)]
+pub struct Base64Config<F: PrimeField> {
     encoded_chars: Column<Advice>, // This is the raw ASCII character value -- like 'a' would be 97
     bit_decompositions: [Column<Advice>; BIT_DECOMPOSITION_ADVICE_COL_COUNT],
     decoded_chars: Column<Advice>, // This has a 1 char gap between each group of 3 chars
@@ -89,17 +94,19 @@ impl<F: PrimeField> Base64Config<F> {
         None
     }
 
-    pub fn configure(meta: &mut ConstraintSystem<F>, encoded_chars: Column<Advice>) -> Self {
+    pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let mut bit_decompositions = vec![];
         for _ in 0..BIT_DECOMPOSITION_ADVICE_COL_COUNT {
             bit_decompositions.push(meta.advice_column());
         }
+        let encoded_chars = meta.advice_column();
         let decoded_chars = meta.advice_column();
         // let characters = meta.advice_column();
         let decoded_chars_without_gap = meta.advice_column();
         let bit_decomposition_table = BitDecompositionTableConfig::configure(meta);
         let q_decode_selector = meta.complex_selector();
 
+        meta.enable_equality(encoded_chars);
         meta.enable_equality(decoded_chars);
         meta.enable_equality(decoded_chars_without_gap);
 
@@ -150,7 +157,9 @@ impl<F: PrimeField> Base64Config<F> {
         &self,
         mut layouter: impl Layouter<F>,
         characters: &[u8],
-    ) -> Result<bool, Error> {
+    ) -> Result<AssignedBase64Result<F>, Error> {
+        let mut assigned_encoded_values = Vec::new();
+        let mut assigned_decoded_values = Vec::new();
         layouter.assign_region(
             || "Assign values",
             |mut region| {
@@ -175,6 +184,7 @@ impl<F: PrimeField> Base64Config<F> {
                         self.decoded_chars,
                         i + (i / 3),
                     )?;
+                    assigned_decoded_values.push(offset_value);
                 }
 
                 // Set the character values as encoded chars
@@ -182,12 +192,13 @@ impl<F: PrimeField> Base64Config<F> {
                     let bit_val: u8 = self
                         .bit_decomposition_table
                         .map_character_to_encoded_value(characters[i] as char);
-                    region.assign_advice(
+                    let assigned_encoded = region.assign_advice(
                         || format!("encoded character"),
                         self.encoded_chars,
                         i,
                         || Value::known(F::from(characters[i] as u64)),
                     )?;
+                    assigned_encoded_values.push(assigned_encoded);
 
                     // Set bit values by decomposing the encoded character
                     for j in 0..3 {
@@ -204,9 +215,14 @@ impl<F: PrimeField> Base64Config<F> {
                 for i in (0..SHAHASH_BASE64_STRING_LEN).step_by(4) {
                     self.q_decode_selector.enable(&mut region, i)?;
                 }
-                Ok(true)
+                Ok(())
             },
-        )
+        )?;
+        let result = AssignedBase64Result {
+            encoded: assigned_encoded_values,
+            decoded: assigned_decoded_values,
+        };
+        Ok(result)
     }
 }
 #[derive(Default, Clone)]
@@ -229,9 +245,9 @@ impl<F: PrimeField> Circuit<F> for Base64Circuit<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let encoded_chars = meta.advice_column();
+        // let encoded_chars = meta.advice_column();
         // TODO Set an offset to encoded_chars
-        let config = Base64Config::configure(meta, encoded_chars);
+        let config = Base64Config::configure(meta);
         config
     }
 
