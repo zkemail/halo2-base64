@@ -1,6 +1,10 @@
-use ff::{Field, PrimeField};
 // use halo2::halo2curves::bn256::G1Affine;
-use halo2_proofs::{
+use base64::{
+    alphabet,
+    engine::{self, general_purpose},
+    Engine as _,
+};
+use halo2_base::halo2_proofs::{
     circuit::{AssignedCell, Layouter, SimpleFloorPlanner, Value},
     plonk::{
         Advice, Assigned, Circuit, Column, ConstraintSystem, Constraints, Error, Expression,
@@ -8,6 +12,7 @@ use halo2_proofs::{
     },
     poly::Rotation,
 };
+use halo2_base::utils::PrimeField;
 use std::{marker::PhantomData, vec};
 
 use crate::table::BitDecompositionTableConfig;
@@ -16,10 +21,15 @@ use crate::table::BitDecompositionTableConfig;
 const SHAHASH_BASE64_STRING_LEN: usize = 44;
 const BIT_DECOMPOSITION_ADVICE_COL_COUNT: usize = 12;
 
-// Here we decompose a transition into 3-value lookups.
-
 #[derive(Debug, Clone)]
-struct Base64Config<F: PrimeField> {
+pub struct AssignedBase64Result<F: PrimeField> {
+    pub encoded: Vec<AssignedCell<F, F>>,
+    pub decoded: Vec<AssignedCell<F, F>>,
+}
+
+// Here we decompose a transition into 3-value lookups.
+#[derive(Debug, Clone)]
+pub struct Base64Config<F: PrimeField> {
     encoded_chars: Column<Advice>, // This is the raw ASCII character value -- like 'a' would be 97
     bit_decompositions: [Column<Advice>; BIT_DECOMPOSITION_ADVICE_COL_COUNT],
     decoded_chars: Column<Advice>, // This has a 1 char gap between each group of 3 chars
@@ -40,7 +50,7 @@ impl<F: PrimeField> Base64Config<F> {
         bit_lookup_cols: Vec<usize>,
         selector_col: Selector,
     ) -> Option<bool> {
-        meta.lookup(|meta| {
+        meta.lookup("lookup base64 encode/decode", |meta| {
             assert!(bit_query_cols.len() == bit_lookup_cols.len());
             let q = meta.query_selector(selector_col);
 
@@ -84,17 +94,19 @@ impl<F: PrimeField> Base64Config<F> {
         None
     }
 
-    pub fn configure(meta: &mut ConstraintSystem<F>, encoded_chars: Column<Advice>) -> Self {
+    pub fn configure(meta: &mut ConstraintSystem<F>) -> Self {
         let mut bit_decompositions = vec![];
-        for i in 0..BIT_DECOMPOSITION_ADVICE_COL_COUNT {
+        for _ in 0..BIT_DECOMPOSITION_ADVICE_COL_COUNT {
             bit_decompositions.push(meta.advice_column());
         }
+        let encoded_chars = meta.advice_column();
         let decoded_chars = meta.advice_column();
         // let characters = meta.advice_column();
         let decoded_chars_without_gap = meta.advice_column();
         let bit_decomposition_table = BitDecompositionTableConfig::configure(meta);
         let q_decode_selector = meta.complex_selector();
 
+        meta.enable_equality(encoded_chars);
         meta.enable_equality(decoded_chars);
         meta.enable_equality(decoded_chars_without_gap);
 
@@ -144,13 +156,21 @@ impl<F: PrimeField> Base64Config<F> {
     pub fn assign_values(
         &self,
         mut layouter: impl Layouter<F>,
-        characters: Vec<u8>,
-    ) -> Result<bool, Error> {
+        characters: &[u8],
+    ) -> Result<AssignedBase64Result<F>, Error> {
+        let mut assigned_encoded_values = Vec::new();
+        let mut assigned_decoded_values = Vec::new();
         layouter.assign_region(
             || "Assign values",
             |mut region| {
                 // Set the decoded values and enable permutation checks with offset
-                let decoded_chars: Vec<u8> = base64::decode(characters.clone()).unwrap();
+                let decoded_chars: Vec<u8> =
+                    general_purpose::STANDARD
+                        .decode(characters)
+                        .expect(&format!(
+                            "{:?} is an invalid base64 string bytes",
+                            characters
+                        ));
                 for i in 0..decoded_chars.len() {
                     let offset_value = region.assign_advice(
                         || format!("decoded character"),
@@ -164,6 +184,7 @@ impl<F: PrimeField> Base64Config<F> {
                         self.decoded_chars,
                         i + (i / 3),
                     )?;
+                    assigned_decoded_values.push(offset_value);
                 }
 
                 // Set the character values as encoded chars
@@ -171,12 +192,13 @@ impl<F: PrimeField> Base64Config<F> {
                     let bit_val: u8 = self
                         .bit_decomposition_table
                         .map_character_to_encoded_value(characters[i] as char);
-                    region.assign_advice(
+                    let assigned_encoded = region.assign_advice(
                         || format!("encoded character"),
                         self.encoded_chars,
                         i,
-                        || Value::known(F::from_u128(characters[i].into())),
+                        || Value::known(F::from(characters[i] as u64)),
                     )?;
+                    assigned_encoded_values.push(assigned_encoded);
 
                     // Set bit values by decomposing the encoded character
                     for j in 0..3 {
@@ -193,9 +215,14 @@ impl<F: PrimeField> Base64Config<F> {
                 for i in (0..SHAHASH_BASE64_STRING_LEN).step_by(4) {
                     self.q_decode_selector.enable(&mut region, i)?;
                 }
-                Ok(true)
+                Ok(())
             },
-        )
+        )?;
+        let result = AssignedBase64Result {
+            encoded: assigned_encoded_values,
+            decoded: assigned_decoded_values,
+        };
+        Ok(result)
     }
 }
 #[derive(Default, Clone)]
@@ -218,9 +245,9 @@ impl<F: PrimeField> Circuit<F> for Base64Circuit<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let encoded_chars = meta.advice_column();
+        // let encoded_chars = meta.advice_column();
         // TODO Set an offset to encoded_chars
-        let config = Base64Config::configure(meta, encoded_chars);
+        let config = Base64Config::configure(meta);
         config
     }
 
@@ -239,7 +266,7 @@ impl<F: PrimeField> Circuit<F> for Base64Circuit<F> {
         };
         let mut value = config.assign_values(
             layouter.namespace(|| "Assign all values"),
-            self.base64_encoded_string.clone(),
+            &self.base64_encoded_string,
         );
         println!("Done assigning values in synthesize");
         Ok(())
@@ -248,10 +275,10 @@ impl<F: PrimeField> Circuit<F> for Base64Circuit<F> {
 
 #[cfg(test)]
 mod tests {
-    use halo2_proofs::{
+    use halo2_base::halo2_proofs::{
         circuit::floor_planner::V1,
         dev::{CircuitCost, FailureLocation, MockProver, VerifyFailure},
-        pasta::{Eq, Fp},
+        halo2curves::bn256::{Fr, G1},
         plonk::{Any, Circuit},
     };
 
@@ -279,7 +306,7 @@ mod tests {
             .collect();
         print!("Decoded chars: {:?}", chars);
         // Successful cases
-        let circuit = Base64Circuit::<Fp> {
+        let circuit = Base64Circuit::<Fr> {
             base64_encoded_string: characters,
             _marker: PhantomData,
         };
@@ -289,7 +316,7 @@ mod tests {
             Err(e) => panic!("Error: {:?}", e),
         };
         prover.assert_satisfied();
-        CircuitCost::<Eq, Base64Circuit<Fp>>::measure((k as u128).try_into().unwrap(), &circuit);
+        CircuitCost::<G1, Base64Circuit<Fr>>::measure((k as u128).try_into().unwrap(), &circuit);
         // .proof_size(2);
 
         // Assert the 33rd pos is 0
