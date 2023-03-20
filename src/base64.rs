@@ -5,7 +5,7 @@ use base64::{
     Engine as _,
 };
 use halo2_base::halo2_proofs::{
-    circuit::{AssignedCell, Layouter, SimpleFloorPlanner, Value},
+    circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
     plonk::{
         Advice, Assigned, Circuit, Column, ConstraintSystem, Constraints, Error, Expression,
         Instance, Selector,
@@ -155,69 +155,63 @@ impl<F: PrimeField> Base64Config<F> {
     // Note that the two types of region.assign_advice calls happen together so that it is the same region
     pub fn assign_values(
         &self,
-        mut layouter: impl Layouter<F>,
+        region: &mut Region<F>,
         characters: &[u8],
     ) -> Result<AssignedBase64Result<F>, Error> {
         let mut assigned_encoded_values = Vec::new();
         let mut assigned_decoded_values = Vec::new();
-        layouter.assign_region(
-            || "Assign values",
-            |mut region| {
-                // Set the decoded values and enable permutation checks with offset
-                let decoded_chars: Vec<u8> =
-                    general_purpose::STANDARD
-                        .decode(characters)
-                        .expect(&format!(
-                            "{:?} is an invalid base64 string bytes",
-                            characters
-                        ));
-                for i in 0..decoded_chars.len() {
-                    let offset_value = region.assign_advice(
-                        || format!("decoded character"),
-                        self.decoded_chars_without_gap,
-                        i,
-                        || Value::known(F::from_u128(decoded_chars[i].into())),
-                    )?;
-                    offset_value.copy_advice(
-                        || "copying to add offset",
-                        &mut region,
-                        self.decoded_chars,
-                        i + (i / 3),
-                    )?;
-                    assigned_decoded_values.push(offset_value);
-                }
 
-                // Set the character values as encoded chars
-                for i in 0..SHAHASH_BASE64_STRING_LEN {
-                    let bit_val: u8 = self
-                        .bit_decomposition_table
-                        .map_character_to_encoded_value(characters[i] as char);
-                    let assigned_encoded = region.assign_advice(
-                        || format!("encoded character"),
-                        self.encoded_chars,
-                        i,
-                        || Value::known(F::from(characters[i] as u64)),
-                    )?;
-                    assigned_encoded_values.push(assigned_encoded);
+        // Set the decoded values and enable permutation checks with offset
+        let decoded_chars: Vec<u8> = general_purpose::STANDARD
+            .decode(characters)
+            .expect(&format!(
+                "{:?} is an invalid base64 string bytes",
+                characters
+            ));
+        for i in 0..decoded_chars.len() {
+            let offset_value = region.assign_advice(
+                || format!("decoded character"),
+                self.decoded_chars_without_gap,
+                i,
+                || Value::known(F::from_u128(decoded_chars[i].into())),
+            )?;
+            offset_value.copy_advice(
+                || "copying to add offset",
+                region,
+                self.decoded_chars,
+                i + (i / 3),
+            )?;
+            assigned_decoded_values.push(offset_value);
+        }
 
-                    // Set bit values by decomposing the encoded character
-                    for j in 0..3 {
-                        region.assign_advice(
-                            || format!("bit assignment"),
-                            self.bit_decompositions[(i % 4) * 3 + j],
-                            i - (i % 4),
-                            || Value::known(F::from_u128(((bit_val >> ((2 - j) * 2)) % 4) as u128)),
-                        )?;
-                    }
-                }
+        // Set the character values as encoded chars
+        for i in 0..SHAHASH_BASE64_STRING_LEN {
+            let bit_val: u8 = self
+                .bit_decomposition_table
+                .map_character_to_encoded_value(characters[i] as char);
+            let assigned_encoded = region.assign_advice(
+                || format!("encoded character"),
+                self.encoded_chars,
+                i,
+                || Value::known(F::from(characters[i] as u64)),
+            )?;
+            assigned_encoded_values.push(assigned_encoded);
 
-                // Enable q_decomposed on every 4 rows
-                for i in (0..SHAHASH_BASE64_STRING_LEN).step_by(4) {
-                    self.q_decode_selector.enable(&mut region, i)?;
-                }
-                Ok(())
-            },
-        )?;
+            // Set bit values by decomposing the encoded character
+            for j in 0..3 {
+                region.assign_advice(
+                    || format!("bit assignment"),
+                    self.bit_decompositions[(i % 4) * 3 + j],
+                    i - (i % 4),
+                    || Value::known(F::from_u128(((bit_val >> ((2 - j) * 2)) % 4) as u128)),
+                )?;
+            }
+        }
+
+        // Enable q_decomposed on every 4 rows
+        for i in (0..SHAHASH_BASE64_STRING_LEN).step_by(4) {
+            self.q_decode_selector.enable(region, i)?;
+        }
         let result = AssignedBase64Result {
             encoded: assigned_encoded_values,
             decoded: assigned_decoded_values,
@@ -268,9 +262,9 @@ impl<F: PrimeField> Circuit<F> for Base64Circuit<F> {
                 return Err(e);
             }
         };
-        config.assign_values(
-            layouter.namespace(|| "Assign all values"),
-            &self.base64_encoded_string,
+        layouter.assign_region(
+            || "Assign all values",
+            |mut region| config.assign_values(&mut region, &self.base64_encoded_string),
         )?;
         println!("Done assigning values in synthesize");
         Ok(())
