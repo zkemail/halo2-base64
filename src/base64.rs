@@ -224,6 +224,10 @@ impl<F: PrimeField> Base64Config<F> {
         };
         Ok(result)
     }
+
+    pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        self.bit_decomposition_table.load(layouter)
+    }
 }
 #[derive(Default, Clone)]
 struct Base64Circuit<F: PrimeField> {
@@ -257,17 +261,17 @@ impl<F: PrimeField> Circuit<F> for Base64Circuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         println!("Assigning table in synthesize...");
-        match config.bit_decomposition_table.load(&mut layouter) {
+        match config.load(&mut layouter) {
             Ok(_) => (),
             Err(e) => {
                 println!("Error loading bit decomposition table: {:?}", e);
                 return Err(e);
             }
         };
-        let mut value = config.assign_values(
+        config.assign_values(
             layouter.namespace(|| "Assign all values"),
             &self.base64_encoded_string,
-        );
+        )?;
         println!("Done assigning values in synthesize");
         Ok(())
     }
