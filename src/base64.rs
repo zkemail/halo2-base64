@@ -75,7 +75,7 @@ impl<F: PrimeField> Base64Config<F> {
                     self.decoded_chars,
                     Rotation(encoded_or_decoded_index_offset as i32),
                 );
-                println!("decoded_char: {:?}", decoded_char);
+                // println!("decoded_char: {:?}", decoded_char);
                 lookup_vec.push((
                     q.clone() * decoded_char + one_minus_q.clone() * zero.clone(),
                     self.bit_decomposition_table.value_decoded,
@@ -84,7 +84,7 @@ impl<F: PrimeField> Base64Config<F> {
             for i in 0..bit_query_cols.len() {
                 let bit =
                     meta.query_advice(self.bit_decompositions[bit_query_cols[i]], Rotation::cur());
-                println!("bit: {:?}", bit);
+                // println!("bit: {:?}", bit);
                 lookup_vec.push((
                     q.clone() * bit + one_minus_q.clone() * zero.clone(),
                     self.bit_decomposition_table.bit_decompositions[bit_lookup_cols[i]],
@@ -255,7 +255,7 @@ impl<F: PrimeField> Circuit<F> for Base64Circuit<F> {
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        println!("Assigning table in synthesize...");
+        // println!("Assigning table in synthesize...");
         match config.load(&mut layouter) {
             Ok(_) => (),
             Err(e) => {
@@ -267,7 +267,7 @@ impl<F: PrimeField> Circuit<F> for Base64Circuit<F> {
             || "Assign all values",
             |mut region| config.assign_values(&mut region, &self.base64_encoded_string),
         )?;
-        println!("Done assigning values in synthesize");
+        // println!("Done assigning values in synthesize");
         Ok(())
     }
 }
