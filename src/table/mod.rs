@@ -136,12 +136,7 @@ impl<F: PrimeField> BitDecompositionTableConfig<F> {
                             i + OFFSET,
                             || Value::known(F::from_u128(((i >> (col * 2)) % 4) as u128)),
                         )?;
-                        println!(
-                            "Assigned bit decompositions for {:?}: col {:?} - {:?}",
-                            i,
-                            col,
-                            ((i >> (col * 2)) % 4) as u128
-                        );
+                        // println!( "Assigned bit decompositions for {:?}: col {:?} - {:?}", i, col, ((i >> (col * 2)) % 4) as u128);
                     }
                     // Assign each value_decoded value
                     table.assign_cell(

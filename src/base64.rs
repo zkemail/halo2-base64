@@ -16,6 +16,7 @@ use halo2_base::utils::PrimeField;
 use std::{marker::PhantomData, vec};
 
 use crate::table::BitDecompositionTableConfig;
+// use snark_verifier_sdk::CircuitExt;
 
 // Checks a regex of string len
 const SHAHASH_BASE64_STRING_LEN: usize = 44;
@@ -224,7 +225,7 @@ impl<F: PrimeField> Base64Config<F> {
     }
 }
 #[derive(Default, Clone)]
-struct Base64Circuit<F: PrimeField> {
+pub struct Base64Circuit<F: PrimeField> {
     // Since this is only relevant for the witness, we can opt to make this whatever convenient type we want
     pub base64_encoded_string: Vec<u8>,
     _marker: PhantomData<F>,
@@ -294,7 +295,7 @@ mod tests {
             .map(|c| c as u32 as u8)
             .collect();
 
-        // Make a vector of the numbers 1...24
+        // Decode characters
         assert_eq!(characters.len(), SHAHASH_BASE64_STRING_LEN);
         #[allow(deprecated)]
         let chars: Vec<char> = base64::decode(characters.clone())
@@ -303,6 +304,7 @@ mod tests {
             .map(|&b| b as char)
             .collect();
         print!("Decoded chars: {:?}", chars);
+
         // Successful cases
         let circuit = Base64Circuit::<Fr> {
             base64_encoded_string: characters,
