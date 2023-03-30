@@ -25,5 +25,5 @@ once_cell = "1.17.0"
 rand = "0.8.5"
 
 # aggregation
-snark-verifier = { git = "https://github.com/axiom-crypto/snark-verifier.git", tag = "v2023_01_30", default-features = false, features = ["loader_halo2"], optional = true }
-snark_verifier_sdk = { git = "https://github.com/axiom-crypto/snark-verifier.git", package = "snark-verifier-sdk" }
+# snark-verifier = { git = "https://github.com/axiom-crypto/snark-verifier.git", tag = "v2023_01_30", default-features = false, features = ["loader_halo2"], optional = true }
+# snark_verifier_sdk = { git = "https://github.com/axiom-crypto/snark-verifier.git", package = "snark-verifier-sdk" }
