@@ -86,7 +86,6 @@ impl<F: PrimeField> BitDecompositionTableConfig<F> {
                 )?;
 
                 for value_encoded in 0..64 {
-                    // print!("Row: {:?} {:?}", row, offset);
                     table.assign_cell(
                         || "value_encoded",
                         self.value_encoded,
@@ -128,7 +127,6 @@ impl<F: PrimeField> BitDecompositionTableConfig<F> {
 
                 // Assign bit decompositions for each value_encoded and value_decoded value
                 for i in 0..256 {
-                    // print!("Row: {:?} {:?}", row, offset);
                     for col in 0..BIT_COLUMN_COUNT {
                         table.assign_cell(
                             || "bit decompositions",
@@ -136,7 +134,6 @@ impl<F: PrimeField> BitDecompositionTableConfig<F> {
                             i + OFFSET,
                             || Value::known(F::from_u128(((i >> (col * 2)) % 4) as u128)),
                         )?;
-                        // println!( "Assigned bit decompositions for {:?}: col {:?} - {:?}", i, col, ((i >> (col * 2)) % 4) as u128);
                     }
                     // Assign each value_decoded value
                     table.assign_cell(
@@ -146,7 +143,6 @@ impl<F: PrimeField> BitDecompositionTableConfig<F> {
                         || Value::known(F::from_u128(i as u128)),
                     )?;
                 }
-                print!("Done assigning table");
                 Ok(())
             },
         )
