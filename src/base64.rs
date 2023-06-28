@@ -347,26 +347,4 @@ mod tests {
     //         _ => assert_eq!(1, 0),
     //     }
     // }
-
-    // $ cargo test --release --all-features print_circuit_1
-    #[cfg(feature = "dev-graph")]
-    #[test]
-    fn print_circuit_1() {
-        use plotters::prelude::*;
-
-        let root =
-            BitMapBackend::new("base64-circuit-layout.png", (1024, 3096)).into_drawing_area();
-        root.fill(&WHITE).unwrap();
-        let root = root
-            .titled("Base64 Circuit Layout", ("sans-serif", 60))
-            .unwrap();
-
-        let circuit = Base64Circuit::<Fp> {
-            base64_encoded_string: vec![97, 98, 99, 100] as u128,
-            _marker: PhantomData,
-        };
-        halo2_proofs::dev::CircuitLayout::default()
-            .render(3, &circuit, &root)
-            .unwrap();
-    }
 }
